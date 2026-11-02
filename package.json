@@ -1,0 +1,26 @@
+{
+  "name": "feishu-ai-bot",
+  "version": "0.3.0",
+  "description": "Feishu coding bot powered by the open-source Lark SDK and Codex ACP",
+  "type": "module",
+  "bin": {
+    "devbox-codex-bot": "./bin/devbox-codex-bot.mjs",
+    "feishu-ai-bot": "./bin/devbox-codex-bot.mjs",
+    "feishu-runtime": "./bin/feishu-runtime"
+  },
+  "scripts": {
+    "check": "node --check bin/devbox-codex-bot.mjs && node --check src/core.mjs && node --check src/review.mjs && node --check src/service.mjs && node --check src/runtime-env.mjs && node --check src/codex.mjs && node --check src/deploy.mjs && bash -n deploy.sh && node --check bin/feishu-runtime && node --check src/bridge.mjs && node --check src/acp-client.mjs && node scripts/audit-dependencies.mjs",
+    "test": "node --test",
+    "verify": "npm run check && npm test",
+    "audit:licenses": "node scripts/audit-dependencies.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@agentclientprotocol/codex-acp": "1.6.2",
+    "@agentclientprotocol/sdk": "1.3.0",
+    "@larksuiteoapi/node-sdk": "1.76.0"
+  }
+}

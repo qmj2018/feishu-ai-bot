@@ -1,0 +1,6 @@
+interface:
+  display_name: "Codebase MR Review"
+  short_description: "Review a Codebase MR safely from its URL"
+  default_prompt: "Use $codebase-mr-review to review this Codebase MR and return prioritized findings."
+policy:
+  allow_implicit_invocation: true

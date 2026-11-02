@@ -1,0 +1,33 @@
+{
+  "group": {
+    "replyPolicy": "mention",
+    "defaultMode": "thread"
+  },
+  "agents": {
+    "defaultAgent": "codex",
+    "enableAutoStart": true,
+    "acpInitializeTimeoutMs": 120000
+  },
+  "sessions": {
+    "maxQueueSize": 3,
+    "autoCleanup": true,
+    "cleanupIntervalMinutes": 60
+  },
+  "permissions": {
+    "strategy": "ask",
+    "allowedTools": [],
+    "deniedTools": [],
+    "timeoutSeconds": 300
+  },
+  "deduplication": {
+    "enabled": true,
+    "maxRecords": 10000,
+    "expireHours": 168
+  },
+  "shell": {
+    "enabled": false
+  },
+  "weixin": {
+    "enabled": false
+  }
+}
