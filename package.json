@@ -1,18 +1,19 @@
 {
   "name": "feishu-ai-bot",
   "version": "0.3.0",
-  "description": "Feishu coding bot powered by the open-source Lark SDK and Codex ACP",
+  "description": "Feishu AI bot with Codex and Claude Code support",
   "type": "module",
   "bin": {
-    "devbox-codex-bot": "./bin/devbox-codex-bot.mjs",
-    "feishu-ai-bot": "./bin/devbox-codex-bot.mjs",
-    "feishu-runtime": "./bin/feishu-runtime"
+    "feishu-ai-bot": "./dist/bin/feishu-ai-bot.js",
+    "feishu-runtime": "./dist/bin/feishu-runtime.js"
   },
   "scripts": {
-    "check": "node --check bin/devbox-codex-bot.mjs && node --check src/core.mjs && node --check src/review.mjs && node --check src/service.mjs && node --check src/runtime-env.mjs && node --check src/codex.mjs && node --check src/deploy.mjs && bash -n deploy.sh && node --check bin/feishu-runtime && node --check src/bridge.mjs && node --check src/acp-client.mjs && node scripts/audit-dependencies.mjs",
-    "test": "node --test",
-    "verify": "npm run check && npm test",
-    "audit:licenses": "node scripts/audit-dependencies.mjs"
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "npm run build && bash -n deploy.sh && bash -n scripts/bootstrap-system.sh && bash -n scripts/ensure-dependencies.sh && bash -n bin/feishu-runtime && bash -n bin/feishu-ai-bot && node dist/scripts/audit-dependencies.js",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "verify": "npm run check && node --test dist/test/*.test.js",
+    "audit:licenses": "npm run build && node dist/scripts/audit-dependencies.js"
   },
   "engines": {
     "node": ">=20"
@@ -22,5 +23,10 @@
     "@agentclientprotocol/codex-acp": "1.6.2",
     "@agentclientprotocol/sdk": "1.3.0",
     "@larksuiteoapi/node-sdk": "1.76.0"
+  },
+  "private": true,
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2"
   }
 }

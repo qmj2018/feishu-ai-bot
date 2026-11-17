@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cli_script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ ! -f "$cli_script_dir/../dist/bin/feishu-ai-bot.js" ]]; then
+  echo "请先运行 npm ci --include=dev 和 npm run build，或使用 ./deploy.sh 完成构建和部署。" >&2
+  exit 1
+fi
+exec node "$cli_script_dir/../dist/bin/feishu-ai-bot.js" "$@"

@@ -2,9 +2,9 @@
 
 All third-party packages in the lockfile are obtained from https://registry.npmjs.org/.
 
-This inventory includes transitive and optional platform dependencies. Each package remains
+This inventory includes development, transitive and optional platform dependencies. Each package remains
 under its upstream license; upstream license and NOTICE files distributed with each package
-must be preserved when redistributing installed dependencies. The project MIT license does
+must be preserved when redistributing installed dependencies. Project licensing does
 not replace third-party licenses. Node.js and Git are separately installed open-source tools.
 
 | Package | Version | License | npm source |
@@ -13,12 +13,12 @@ not replace third-party licenses. Node.js and Git are separately installed open-
 | @agentclientprotocol/sdk | 1.3.0 | Apache-2.0 | [package](https://www.npmjs.com/package/@agentclientprotocol/sdk/v/1.3.0) |
 | @larksuiteoapi/node-sdk | 1.76.0 | MIT | [package](https://www.npmjs.com/package/@larksuiteoapi/node-sdk/v/1.76.0) |
 | @openai/codex | 0.148.0 | Apache-2.0 | [package](https://www.npmjs.com/package/@openai/codex/v/0.148.0) |
-| @openai/codex-darwin-arm64 | 0.148.0-darwin-arm64 | Apache-2.0 | [package](https://www.npmjs.com/package/@openai/codex-darwin-arm64/v/0.148.0-darwin-arm64) |
-| @openai/codex-darwin-x64 | 0.148.0-darwin-x64 | Apache-2.0 | [package](https://www.npmjs.com/package/@openai/codex-darwin-x64/v/0.148.0-darwin-x64) |
-| @openai/codex-linux-arm64 | 0.148.0-linux-arm64 | Apache-2.0 | [package](https://www.npmjs.com/package/@openai/codex-linux-arm64/v/0.148.0-linux-arm64) |
-| @openai/codex-linux-x64 | 0.148.0-linux-x64 | Apache-2.0 | [package](https://www.npmjs.com/package/@openai/codex-linux-x64/v/0.148.0-linux-x64) |
-| @openai/codex-win32-arm64 | 0.148.0-win32-arm64 | Apache-2.0 | [package](https://www.npmjs.com/package/@openai/codex-win32-arm64/v/0.148.0-win32-arm64) |
-| @openai/codex-win32-x64 | 0.148.0-win32-x64 | Apache-2.0 | [package](https://www.npmjs.com/package/@openai/codex-win32-x64/v/0.148.0-win32-x64) |
+| @openai/codex | 0.148.0-darwin-arm64 | Apache-2.0 | [package](https://www.npmjs.com/package/@openai/codex/v/0.148.0-darwin-arm64) |
+| @openai/codex | 0.148.0-darwin-x64 | Apache-2.0 | [package](https://www.npmjs.com/package/@openai/codex/v/0.148.0-darwin-x64) |
+| @openai/codex | 0.148.0-linux-arm64 | Apache-2.0 | [package](https://www.npmjs.com/package/@openai/codex/v/0.148.0-linux-arm64) |
+| @openai/codex | 0.148.0-linux-x64 | Apache-2.0 | [package](https://www.npmjs.com/package/@openai/codex/v/0.148.0-linux-x64) |
+| @openai/codex | 0.148.0-win32-arm64 | Apache-2.0 | [package](https://www.npmjs.com/package/@openai/codex/v/0.148.0-win32-arm64) |
+| @openai/codex | 0.148.0-win32-x64 | Apache-2.0 | [package](https://www.npmjs.com/package/@openai/codex/v/0.148.0-win32-x64) |
 | @protobufjs/aspromise | 1.1.2 | BSD-3-Clause | [package](https://www.npmjs.com/package/@protobufjs/aspromise/v/1.1.2) |
 | @protobufjs/base64 | 1.1.2 | BSD-3-Clause | [package](https://www.npmjs.com/package/@protobufjs/base64/v/1.1.2) |
 | @protobufjs/codegen | 2.0.5 | BSD-3-Clause | [package](https://www.npmjs.com/package/@protobufjs/codegen/v/2.0.5) |
@@ -28,7 +28,27 @@ not replace third-party licenses. Node.js and Git are separately installed open-
 | @protobufjs/path | 1.1.2 | BSD-3-Clause | [package](https://www.npmjs.com/package/@protobufjs/path/v/1.1.2) |
 | @protobufjs/pool | 1.1.0 | BSD-3-Clause | [package](https://www.npmjs.com/package/@protobufjs/pool/v/1.1.0) |
 | @protobufjs/utf8 | 1.1.2 | BSD-3-Clause | [package](https://www.npmjs.com/package/@protobufjs/utf8/v/1.1.2) |
-| @types/node | 26.6.6 | MIT | [package](https://www.npmjs.com/package/@types/node/v/26.6.6) |
+| @types/node | 22.20.5 | MIT | [package](https://www.npmjs.com/package/@types/node/v/22.20.5) |
+| @typescript/typescript-aix-ppc64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-aix-ppc64/v/7.0.2) |
+| @typescript/typescript-darwin-arm64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-darwin-arm64/v/7.0.2) |
+| @typescript/typescript-darwin-x64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-darwin-x64/v/7.0.2) |
+| @typescript/typescript-freebsd-arm64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-freebsd-arm64/v/7.0.2) |
+| @typescript/typescript-freebsd-x64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-freebsd-x64/v/7.0.2) |
+| @typescript/typescript-linux-arm | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-linux-arm/v/7.0.2) |
+| @typescript/typescript-linux-arm64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-linux-arm64/v/7.0.2) |
+| @typescript/typescript-linux-loong64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-linux-loong64/v/7.0.2) |
+| @typescript/typescript-linux-mips64el | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-linux-mips64el/v/7.0.2) |
+| @typescript/typescript-linux-ppc64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-linux-ppc64/v/7.0.2) |
+| @typescript/typescript-linux-riscv64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-linux-riscv64/v/7.0.2) |
+| @typescript/typescript-linux-s390x | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-linux-s390x/v/7.0.2) |
+| @typescript/typescript-linux-x64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-linux-x64/v/7.0.2) |
+| @typescript/typescript-netbsd-arm64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-netbsd-arm64/v/7.0.2) |
+| @typescript/typescript-netbsd-x64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-netbsd-x64/v/7.0.2) |
+| @typescript/typescript-openbsd-arm64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-openbsd-arm64/v/7.0.2) |
+| @typescript/typescript-openbsd-x64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-openbsd-x64/v/7.0.2) |
+| @typescript/typescript-sunos-x64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-sunos-x64/v/7.0.2) |
+| @typescript/typescript-win32-arm64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-win32-arm64/v/7.0.2) |
+| @typescript/typescript-win32-x64 | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/@typescript/typescript-win32-x64/v/7.0.2) |
 | agent-base | 6.0.2 | MIT | [package](https://www.npmjs.com/package/agent-base/v/6.0.2) |
 | asynckit | 0.4.0 | MIT | [package](https://www.npmjs.com/package/asynckit/v/0.4.0) |
 | axios | 1.21.0 | MIT | [package](https://www.npmjs.com/package/axios/v/1.21.0) |
@@ -80,7 +100,8 @@ not replace third-party licenses. Node.js and Git are separately installed open-
 | side-channel-list | 1.0.1 | MIT | [package](https://www.npmjs.com/package/side-channel-list/v/1.0.1) |
 | side-channel-map | 1.0.1 | MIT | [package](https://www.npmjs.com/package/side-channel-map/v/1.0.1) |
 | side-channel-weakmap | 1.0.2 | MIT | [package](https://www.npmjs.com/package/side-channel-weakmap/v/1.0.2) |
-| undici-types | 8.9.0 | MIT | [package](https://www.npmjs.com/package/undici-types/v/8.9.0) |
+| typescript | 7.0.2 | Apache-2.0 | [package](https://www.npmjs.com/package/typescript/v/7.0.2) |
+| undici-types | 6.21.0 | MIT | [package](https://www.npmjs.com/package/undici-types/v/6.21.0) |
 | vscode-jsonrpc | 9.0.3 | MIT | [package](https://www.npmjs.com/package/vscode-jsonrpc/v/9.0.3) |
 | ws | 8.22.1 | MIT | [package](https://www.npmjs.com/package/ws/v/8.22.1) |
 | wsl-utils | 1.0.1 | MIT | [package](https://www.npmjs.com/package/wsl-utils/v/1.0.1) |
