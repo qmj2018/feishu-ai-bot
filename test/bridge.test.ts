@@ -74,21 +74,46 @@ test('bridge creates a detached worktree, restores sessions and persists dedupli
   assert.equal(calls[1].sessionId, 'session1');
   assert.equal(calls[1].cwd, calls[0].cwd);
 });
-test('ACP transport enforces read-only mode and forwards permission results', async t => {
+test('directory workspace uses the configured folder and passes Codex Full Access', async t => {
+  const root = temporary(t);
+  const project = path.join(root, 'project');
+  fs.mkdirSync(project);
+  const calls = [];
+  const bridge = new Bridge({ root: path.join(root, 'runtime'),
+    config: { ...config, project: { path: project, workspaceMode: 'project-directory' }, agents: { codexMode: 'agent-full-access' } },
+    send: async () => {}, agentFactory: async options => {
+      calls.push(options);
+      return { sessionId: 'directory-session', close() {}, async cancel() {}, async setModel() {}, async prompt() { return { stopReason: 'end_turn' }; } };
+    },
+  });
+  for (const id of ['m1', 'm2']) {
+    bridge.handle(event('hello', { message_id: id }));
+    await [...bridge.queues.values()][0].chain;
+  }
+  assert.equal(calls[0].cwd, project);
+  assert.equal(calls[0].codexMode, 'agent-full-access');
+  assert.equal(calls[1].cwd, project);
+  assert.equal(calls[1].sessionId, 'directory-session');
+  assert.equal(fs.existsSync(path.join(project, '.git')), false);
+});
+for (const codexMode of [undefined, 'agent-full-access'] as const) for (const restored of [false, true]) {
+test(`ACP applies ${codexMode || 'read-only'} to ${restored ? 'restored' : 'new'} sessions and forwards permissions`, async t => {
   const root = temporary(t);
   const fake = path.join(root, 'agent.mjs');
   fs.writeFileSync(fake, `
 import readline from 'node:readline';
 if (!process.env.CODEX_PATH?.startsWith('/')) process.exit(7);
+if (process.env.INITIAL_AGENT_MODE !== ${JSON.stringify(codexMode || 'read-only')}) process.exit(8);
 const send = v => process.stdout.write(JSON.stringify({jsonrpc:'2.0',...v})+'\\n');
 let mode;
 readline.createInterface({input:process.stdin}).on('line', line => {
  const r=JSON.parse(line);
  if(r.method==='initialize')send({id:r.id,result:{protocolVersion:1,agentCapabilities:{loadSession:true}}});
  if(r.method==='session/new')send({id:r.id,result:{sessionId:'test'}});
+ if(r.method==='session/load')send({id:r.id,result:{}});
  if(r.method==='session/set_mode'){mode=r.params.modeId;send({id:r.id,result:{}});}
  if(r.method==='session/prompt') {
-   if(mode!=='read-only')process.exit(5);
+   if(mode!==${JSON.stringify(codexMode || 'read-only')})process.exit(5);
    send({method:'session/update',params:{sessionId:'test',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:mode}}}});
    globalThis.promptId=r.id;
    send({id:999,method:'session/request_permission',params:{sessionId:'test',toolCall:{toolCallId:'t1',title:'Edit file'},options:[{optionId:'yes',name:'Allow once',kind:'allow_once'}]}});
@@ -97,13 +122,14 @@ readline.createInterface({input:process.stdin}).on('line', line => {
 });`);
   let text = '';
   let permission;
-  const agent = await connectAgent({ cwd: root, command: process.execPath, args: [fake], onText: chunk => { text += chunk; },
+  const agent = await connectAgent({ cwd: root, codexMode, sessionId: restored ? 'test' : undefined, command: process.execPath, args: [fake], onText: chunk => { text += chunk; },
     requestPermission: p => { permission = p; return { outcome: { outcome: 'selected', optionId: 'yes' } }; } });
   t.after(() => agent.close());
   assert.equal((await agent.prompt('hello')).stopReason, 'end_turn');
-  assert.equal(text, 'read-only');
+  assert.equal(text, codexMode || 'read-only');
   assert.equal(permission.toolCall.title, 'Edit file');
 });
+}
 test('native runtime creates private configuration and rejects stale config replacement', t => {
   const home = temporary(t);
   const cli = new URL('../bin/feishu-runtime.js', import.meta.url);

@@ -35,6 +35,7 @@ import {
 } from "../src/core.js";
 import {
   installSystemdUnit,
+  systemdUnitName,
   renderSupervisorConfig,
   renderSystemdUnit,
   resolveExecutable,
@@ -54,16 +55,19 @@ const HELP = `feishu-ai-bot - 飞书 AI 机器人部署工具（Codex / Claude C
   feishu-ai-bot install
   feishu-ai-bot workspace create --name <name> [--repo <https-or-ssh-url>|--empty]
     [--branch <branch>] [--workspace-root <dir>] [--json]
-  feishu-ai-bot deploy [--slug <slug>] [--project <git-dir>|--repo <url>|--workspace <name>] [--name <name>]
+  feishu-ai-bot deploy [--slug <slug>] [--cwd <dir>|--project <git-dir>|--repo <url>|--workspace <name>] [--name <name>]
+    [--workspace-mode <per-session-worktree|project-directory>] [--codex-mode <read-only|agent|agent-full-access>]
     [--workspace <name>] [--workspace-root <dir>] [--branch <branch>]
     [--model <id|auto>] [--proxy-mode <auto|env|direct>] [--timeout <seconds>]
     [--skip-install] [--service <auto|systemd|manual>] [--no-service]
     [--feishu-mode <auto|create|existing>] [--feishu-profile <name>] [--update-codex]
   feishu-ai-bot models [--slug <slug>] [--proxy-mode <auto|env|direct>] [--timeout <seconds>]
   feishu-ai-bot probe [--slug <slug>] [--model <id|auto>] [--proxy-mode <auto|env|direct>] [--timeout <seconds>] [--json]
-  feishu-ai-bot run [--slug <slug>]
-  feishu-ai-bot setup [--slug <slug>] [--name <name>] [--project <git-dir>]
-  feishu-ai-bot configure [--slug <slug>] [--project <git-dir>]
+  feishu-ai-bot run|start|restart [--slug <slug>] [--cwd <dir>|--project <dir>]
+    [--workspace-mode <per-session-worktree|project-directory>] [--codex-mode <read-only|agent|agent-full-access>]
+  feishu-ai-bot setup [--slug <slug>] [--name <name>] [--cwd <dir>|--project <git-dir>]
+  feishu-ai-bot configure [--slug <slug>] [--project <dir>]
+    [--workspace-mode <per-session-worktree|project-directory>] [--codex-mode <read-only|agent|agent-full-access>]
   feishu-ai-bot start|stop|restart|status [--slug <slug>]
   feishu-ai-bot doctor [--slug <slug>]
   feishu-ai-bot verify [--slug <slug>] [--json]
@@ -96,10 +100,20 @@ function valueAfter(args: string[], flag: string, fallback?: string) {
 }
 
 function common(args: string[]) {
+  if (args.includes('--cwd') && args.includes('--project')) throw new Error('--cwd 不能与 --project 同时使用');
   return {
     slug: validateSlug(valueAfter(args, "--slug") ?? defaultBotSlug()),
-    projectPath: valueAfter(args, "--project", process.cwd()),
+    projectPath: valueAfter(args, '--cwd') || valueAfter(args, "--project", process.cwd()),
   };
+}
+
+function workspaceOptions(args: string[]) {
+  const workspaceMode = valueAfter(args, '--workspace-mode', args.includes('--cwd') ? 'project-directory' : undefined);
+  if (args.includes('--cwd') && workspaceMode !== 'project-directory') throw new Error('--cwd 直接使用目录，不能与 worktree 模式同时使用');
+  if (workspaceMode && !['per-session-worktree', 'project-directory'].includes(workspaceMode)) throw new Error('工作空间模式无效');
+  const codexMode = valueAfter(args, '--codex-mode');
+  if (codexMode && !['read-only', 'agent', 'agent-full-access'].includes(codexMode)) throw new Error('Codex 权限模式无效');
+  return { workspaceMode, codexMode };
 }
 
 function writeStdout(value: unknown): void {
@@ -111,7 +125,7 @@ function writeResult(value: unknown, json = false) {
   else writeStdout(value);
 }
 
-function configure(slug: string, projectPath: string, displayName = DEFAULT_DISPLAY_NAME) {
+function configure(slug: string, projectPath: string, displayName = DEFAULT_DISPLAY_NAME, modes: { workspaceMode?: string; codexMode?: string } = {}) {
   const bot = findBot(slug);
   if (!bot) throw new Error(`Runtime 不存在: ${slug}；请先运行 setup`);
   const status = botStatus(slug, { allowFailure: true });
@@ -121,15 +135,18 @@ function configure(slug: string, projectPath: string, displayName = DEFAULT_DISP
   const current = readRuntimeConfig(bot);
   assertCredentials(current);
   const next = secureConfig(current, {
-    projectPath: resolveProjectPath(projectPath),
+    projectPath,
     displayName,
+    ...modes,
   });
   replaceRuntimeConfig(slug, current, next);
   writeStdout(`安全配置已应用到 ${slug}，凭证未输出到终端。`);
 }
 
-function setupRuntime(slug: string, projectPath: string, displayName: string) {
-  resolveProjectPath(projectPath);
+function setupRuntime(slug: string, projectPath: string, displayName: string, modes: { workspaceMode?: string; codexMode?: string } = {}) {
+  const existing = findBot(slug);
+  const workspaceMode = modes.workspaceMode || (existing && readRuntimeConfig(existing).project?.workspaceMode);
+  resolveProjectPath(projectPath, { requireGit: workspaceMode !== 'project-directory' });
   const { bot, created } = ensureBot(slug, displayName);
   const current = readRuntimeConfig(bot);
   if (!current.feishu?.appId || !current.feishu?.appSecret || process.env.FEISHU_APP_ID || process.env.FEISHU_APP_SECRET || process.env.FEISHU_ALLOWED_USERS) {
@@ -138,8 +155,35 @@ function setupRuntime(slug: string, projectPath: string, displayName: string) {
   } else if (created) {
     throw new Error("新建 Runtime 出现非空凭证，拒绝继续，请运行 doctor 检查");
   }
-  configure(slug, projectPath, displayName);
+  configure(slug, projectPath, displayName, modes);
   writeStdout(`Code Review skills 已就绪（通用审查 + Codebase 入口）: ${installReviewSkill()}`);
+}
+
+function launchRuntime(command: string, args: string[], slug: string) {
+  const modes = workspaceOptions(args);
+  const override = ['--cwd', '--project', '--workspace-mode', '--codex-mode'].some(flag => args.includes(flag));
+  let current, next;
+  if (override) {
+    const bot = findBot(slug);
+    if (!bot) throw new Error(`Runtime 不存在: ${slug}；请先运行 setup`);
+    current = readRuntimeConfig(bot);
+    next = secureConfig(current, { ...modes, projectPath: valueAfter(args, '--cwd') || valueAfter(args, '--project') || current.project?.path,
+      displayName: current.project?.name || DEFAULT_DISPLAY_NAME });
+  }
+  const unit = systemdUnitName(slug);
+  const managed = process.platform === 'linux' && commandExists('systemctl')
+    && run('systemctl', ['--user', 'show', unit, '--property=LoadState', '--value'], { allowFailure: true }).stdout.trim() === 'loaded';
+  const invoke = (action: string) => run('feishu-runtime', ['bots', action, slug], { inherit: true });
+  if (command === 'restart' || command === 'stop') {
+    if (managed) run('systemctl', ['--user', 'stop', unit], { inherit: true });
+    // Also stop a manually launched process if the installed unit was inactive.
+    invoke('stop');
+    if (command === 'stop') return;
+  }
+  if (next && current) replaceRuntimeConfig(slug, current, next);
+  if (command === 'run') run('feishu-runtime', ['bots', 'start', slug, '--foreground'], { inherit: true });
+  else if (managed) run('systemctl', ['--user', 'start', unit], { inherit: true });
+  else invoke('start');
 }
 
 function runtimeOptions(args: string[], slug: string) {
@@ -218,7 +262,9 @@ async function main() {
     return;
   }
   if (command === "preflight") {
-    const checks = preflight(projectPath, { env: runtimeOptions(args, slug).env });
+    const modes = workspaceOptions(args);
+    const checks = preflight(projectPath, { env: runtimeOptions(args, slug).env,
+      resolveProject: value => resolveProjectPath(value, { requireGit: modes.workspaceMode !== 'project-directory' }) });
     if (args.includes("--json")) writeResult({ ok: checks.every((item) => item.ok), checks }, true);
     else for (const item of checks) writeStdout(`${item.ok ? "OK" : "FAIL"}  ${item.name}: ${item.message}`);
     if (checks.some((item) => !item.ok)) process.exitCode = 1;
@@ -257,7 +303,7 @@ async function main() {
   if (command === "deploy") {
     if (args.includes("--help") || args.includes("-h")) { writeStdout(HELP); return; }
     const booleans = new Set(["--skip-install", "--no-service", '--update-codex']);
-    const flags = new Set(["--slug", "--project", "--name", "--model", "--proxy-mode", "--timeout", "--service", "--repo", "--workspace", "--workspace-root", "--branch", "--codex-path", '--feishu-mode', '--feishu-profile', ...booleans]);
+    const flags = new Set(["--slug", "--project", '--cwd', '--workspace-mode', '--codex-mode', "--name", "--model", "--proxy-mode", "--timeout", "--service", "--repo", "--workspace", "--workspace-root", "--branch", "--codex-path", '--feishu-mode', '--feishu-profile', ...booleans]);
     for (let index = 0; index < args.length; index++) {
       if (!flags.has(args[index])) throw new Error(`未知部署参数: ${args[index]}`);
       if (!booleans.has(args[index])) { valueAfter(args.slice(index), args[index]); index++; }
@@ -268,10 +314,12 @@ async function main() {
     const options = runtimeOptions(args, slug);
     const bot = commandExists("feishu-runtime") ? findBot(slug) : undefined;
     const current = bot ? readRuntimeConfig(bot) : undefined;
+    const modes = workspaceOptions(args);
     await deploy({
+      workspaceMode: modes.workspaceMode || current?.project?.workspaceMode, codexMode: modes.codexMode || current?.agents?.codexMode,
       slug, service: service as DeployOptions["service"], repo: valueAfter(args, "--repo"), workspaceName: valueAfter(args, "--workspace"),
       workspaceRoot: valueAfter(args, "--workspace-root"), branch: valueAfter(args, "--branch"),
-      projectPath: valueAfter(args, "--project", args.includes("--repo") || args.includes("--workspace") ? undefined : current?.project?.path || projectPath),
+      projectPath: valueAfter(args, '--cwd') || valueAfter(args, "--project", args.includes("--repo") || args.includes("--workspace") ? undefined : current?.project?.path || projectPath),
       name: valueAfter(args, "--name", current?.project?.name || DEFAULT_DISPLAY_NAME),
       model: valueAfter(args, "--model"), proxyMode: valueAfter(args, "--proxy-mode"),
       timeoutMs: options.timeoutMs, skipInstall: args.includes("--skip-install"),
@@ -282,23 +330,17 @@ async function main() {
   }
   if (command === "setup") {
     const displayName = validateDisplayName(valueAfter(args, "--name", DEFAULT_DISPLAY_NAME));
-    setupRuntime(slug, projectPath, displayName);
+    setupRuntime(slug, projectPath, displayName, workspaceOptions(args));
     writeStdout(`配置完成。下一步运行: feishu-ai-bot start --slug ${slug}`);
     return;
   }
-  if (command === "run") {
-    Object.assign(process.env, resolveServiceEnvironment({ previous: readServiceEnvironment(slug) }));
-    run("feishu-runtime", ["bots", "start", slug, "--foreground"], { inherit: true });
-    return;
-  }
   if (command === "configure") {
-    configure(slug, projectPath);
+    configure(slug, projectPath, DEFAULT_DISPLAY_NAME, workspaceOptions(args));
     return;
   }
-  if (["start", "stop", "restart"].includes(command)) {
+  if (["run", "start", "stop", "restart"].includes(command)) {
     Object.assign(process.env, resolveServiceEnvironment({ previous: readServiceEnvironment(slug) }));
-    const actionArgs = ["bots", command, slug];
-    run("feishu-runtime", actionArgs, { inherit: true });
+    launchRuntime(command, args, slug);
     return;
   }
   if (command === "status") {

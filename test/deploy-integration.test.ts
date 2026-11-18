@@ -46,7 +46,11 @@ else if(tool==='systemctl') {
   if(args[1]==='status') send({running:state.running,status:state.running?'running':'stopped',state:{nobind:false}});
   if(args[1]==='stop') {state.running=false;save();}
   if(args[1]==='start') {state.running=true;save();}
-  if(args[1]==='config') {let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end',()=>fs.writeFileSync(process.env.TEST_CONFIG,JSON.stringify(JSON.parse(input).config),{mode:0o600}));}
+  if(args[1]==='config') {let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end',()=>{
+    const config=JSON.parse(input).config;
+    fs.writeFileSync(process.env.TEST_CONFIG,JSON.stringify(config),{mode:0o600});
+    fs.writeFileSync(process.env.TEST_CONFIG.replace('feishu-runtime.json','runtime.json'),JSON.stringify({workspaceMode:config.project?.workspaceMode||'per-session-worktree'}),{mode:0o600});
+  });}
 } else if(tool==='codex') {
   if(args.includes('--version')) console.log('codex-cli 1.2.3');
   else if(args.includes('login')) console.log('Logged in using test account');
@@ -89,4 +93,18 @@ test("failed model check leaves running bot and its configuration untouched", { 
   const calls = fs.readFileSync(fake.trace, "utf8").trim().split("\n").map(line => JSON.parse(line));
   assert.ok(!calls.some(call => call.args.includes("stop") || call.args.includes("restart")));
   assert.equal(fs.existsSync(path.join(fake.home, ".config/feishu-ai-bot/portable-bot.proxy.env")), false);
+});
+
+test('deploy --cwd accepts a non-Git directory and persists its workspace and Codex modes', { skip: process.platform !== 'linux' }, t => {
+  const fake = machine(t);
+  const directory = path.join(fake.home, 'plain project');
+  fs.mkdirSync(directory);
+  const result = spawnSync(process.execPath, [cli, 'deploy', '--slug', 'portable-bot', '--skip-install', '--cwd', directory,
+    '--codex-mode', 'agent-full-access'], { env: fake.env, encoding: 'utf8', timeout: 15000 });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const config = JSON.parse(fs.readFileSync(fake.env.TEST_CONFIG, 'utf8'));
+  assert.equal(config.project.path, directory);
+  assert.equal(config.project.workspaceMode, 'project-directory');
+  assert.equal(config.agents.codexMode, 'agent-full-access');
+  assert.equal(fs.existsSync(path.join(directory, '.git')), false);
 });

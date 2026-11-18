@@ -37,6 +37,7 @@ function fixture(t, overrides = {}) {
   });
   return { bridge, log };
 }
+function queueTask(bridge, id, text = 'hello') { bridge.enqueue([...bridge.queues.keys()][0], { owner: 'owner', chat: 'chat', thread: '', id, text }); }
 async function drain(bridge) { await Promise.all([...bridge.queues.values()].map(queue => queue.chain)); }
 
 test('working reaction covers initialization and replies, and appears only when a queued task starts', async t => {
@@ -53,7 +54,7 @@ test('working reaction covers initialization and replies, and appears only when 
   ({ log } = setup);
   setup.bridge.handle(event('m1', 'first'));
   await firstStarted.promise;
-  setup.bridge.handle(event('m2', 'second'));
+  queueTask(setup.bridge, 'm2', 'second');
   setup.bridge.handle(event('m1', 'first')); // Duplicate delivery must not add another reaction.
   assert.deepEqual(log, ['add:m1', 'initialize']);
   finishFirst.resolve();
@@ -90,16 +91,118 @@ test('cancel removes the running task reaction without reacting to the cancel co
     ['add:m1', 'remove:m1:reaction:m1']);
 });
 
-test('timed out tasks remove their reaction', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('tasks run beyond 30 minutes, time out at two hours and retain their session for continuation', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
   const started = deferred();
-  const { bridge, log } = fixture(t, { agentFactory: async () => ({ sessionId: 'session', close() {},
-    async prompt() { started.resolve(); return new Promise(() => {}); },
-  }) });
+  const calls = [];
+  const { bridge, log } = fixture(t, { agentFactory: async options => {
+    calls.push(options);
+    return { sessionId: 'session', close() {}, async prompt() {
+      if (calls.length > 1) { options.onText('continued'); return { stopReason: 'end_turn' }; }
+      started.resolve(); return new Promise(() => {});
+    } };
+  } });
   bridge.handle(event('m1')); await started.promise;
-  t.mock.timers.tick(30 * 60_000); await drain(bridge);
+  t.mock.timers.tick(30 * 60_000); await Promise.resolve();
+  assert.equal(bridge.active.size, 1);
+  assert.ok(!log.some(item => item.includes('执行上限')));
+  t.mock.timers.tick(90 * 60_000); await drain(bridge);
   assert.ok(log.includes('remove:m1:reaction:m1'));
-  assert.ok(log.some(item => item.includes('任务失败')));
+  assert.ok(log.some(item => item.includes('2 小时执行上限') && item.includes('无需 /new')));
+  assert.ok(!log.some(item => item.includes('任务失败')));
+  const saved = JSON.parse(fs.readFileSync(bridge.stateFile, 'utf8'));
+  assert.equal(Object.values<any>(saved.sessions)[0].engineSessions.codex, 'session');
+  const repliesAfterTimeout = log.length;
+  t.mock.timers.tick(5 * 60_000); await Promise.resolve();
+  assert.equal(log.length, repliesAfterTimeout);
+  bridge.handle(event('m2', 'continue')); await drain(bridge);
+  assert.equal(calls[1].sessionId, 'session');
+  assert.equal(calls[1].cwd, calls[0].cwd);
+});
+
+for (const outcome of ['complete', 'cancel', 'error']) {
+  test(`progress replies every five minutes and stops after ${outcome}`, async t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+    const started = deferred(), finish = deferred();
+    const { bridge, log } = fixture(t, { agentFactory: async options => ({ sessionId: 'session', close() {},
+      async cancel() { finish.resolve(); },
+      async prompt() {
+        started.resolve(); await finish.promise;
+        if (outcome === 'error') throw new Error('provider failure');
+        options.onText('finished'); return { stopReason: outcome === 'cancel' ? 'cancelled' : 'end_turn' };
+      },
+    }) });
+    bridge.handle(event('m1')); await started.promise;
+    const progress = () => log.filter(item => item.includes('任务仍在执行'));
+    t.mock.timers.tick(5 * 60_000 - 1);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(progress().length, 0);
+    t.mock.timers.tick(1);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(progress().length, 1);
+    assert.match(progress()[0], /reply:m1:.*已运行 5 分钟/);
+    t.mock.timers.tick(5 * 60_000);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(progress().length, 2);
+    assert.match(progress()[1], /已运行 10 分钟/);
+    if (outcome === 'cancel') bridge.handle(event('cancel', '/cancel'));
+    else finish.resolve();
+    await drain(bridge);
+    t.mock.timers.tick(2 * 60 * 60_000);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(progress().length, 2);
+    assert.ok(!log.some(item => item.includes('执行上限')));
+    assert.equal(bridge.active.size, 0);
+    assert.equal(bridge.queues.size, 0);
+  });
+}
+
+test('slow or failed progress delivery does not overlap, terminate the task, or hold up its final reply', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  const started = deferred(), finish = deferred(), delivery = deferred();
+  let attempts = 0;
+  const replies = [];
+  const { bridge } = fixture(t, {
+    send: async (_id, text) => {
+      if (text.includes('任务仍在执行')) {
+        attempts++;
+        if (attempts === 1) await delivery.promise;
+        else throw new Error('progress unavailable');
+      }
+      replies.push(text);
+    },
+    agentFactory: async options => ({ sessionId: 'session', close() {}, async prompt() {
+      started.resolve(); await finish.promise; options.onText('final answer'); return { stopReason: 'end_turn' };
+    } }),
+  });
+  bridge.handle(event('m1')); await started.promise;
+  t.mock.timers.tick(5 * 60_000); await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.tick(5 * 60_000); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(attempts, 1);
+  delivery.resolve(); await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.tick(5 * 60_000); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(attempts, 2);
+  assert.equal(bridge.active.size, 1);
+  finish.resolve(); await drain(bridge);
+  assert.ok(replies.includes('final answer'));
+  assert.ok(!replies.some(text => text.includes('任务失败')));
+});
+
+test('queued tasks and revoked users do not receive execution reminders', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  const started = deferred(), finish = deferred();
+  const { bridge, log } = fixture(t, { agentFactory: async () => ({ sessionId: 'session', close() {}, async prompt() {
+    started.resolve(); await finish.promise; return { stopReason: 'end_turn' };
+  } }) });
+  bridge.handle(event('m1')); await started.promise;
+  queueTask(bridge, 'm2');
+  t.mock.timers.tick(5 * 60_000); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(log.filter(item => item.includes('任务仍在执行')).length, 1);
+  assert.ok(!log.some(item => item.startsWith('reply:m2:')));
+  bridge.config.feishu.allowedUsers = [];
+  t.mock.timers.tick(5 * 60_000); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(log.filter(item => item.includes('任务仍在执行')).length, 1);
+  finish.resolve(); await drain(bridge);
 });
 
 test('reaction API errors do not prevent replies or block the next queued task', async t => {
@@ -108,7 +211,7 @@ test('reaction API errors do not prevent replies or block the next queued task',
       async add() { if (failing === 'add') throw new Error('no scope'); return 'reaction'; },
       async remove() { if (failing === 'remove') throw new Error('network'); },
     } });
-    bridge.handle(event('m1')); bridge.handle(event('m2')); await drain(bridge);
+    bridge.handle(event('m1')); queueTask(bridge, 'm2'); await drain(bridge);
     assert.deepEqual(log, ['reply:m1:answer hello', 'reply:m2:answer hello']);
   }
 });
@@ -123,7 +226,7 @@ test('management commands, rejected senders and full queues do not get a working
   await drain(bridge);
   assert.equal(log.some(item => item.startsWith('add:')), false);
   bridge.handle(event('m1')); await started.promise;
-  bridge.handle(event('m2')); bridge.handle(event('m3')); bridge.handle(event('full'));
+  queueTask(bridge, 'm2'); queueTask(bridge, 'm3'); queueTask(bridge, 'full');
   assert.deepEqual(log.filter(item => item.startsWith('add:')), ['add:m1']);
   finish.resolve(); await drain(bridge);
   assert.equal(log.some(item => item.startsWith('add:full')), false);

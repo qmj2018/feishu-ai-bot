@@ -4,10 +4,11 @@ import { Readable, Writable } from 'node:stream';
 import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
 import { localCodexPath } from './local-codex.js';
 
-// No file or terminal capabilities: Codex uses its own sandboxed tools.
+// No file or terminal capabilities: Codex uses its own tools and permission mode.
 export async function connectAgent({ cwd, sessionId, model, reasoningEffort, onText = () => {}, requestPermission = async () => ({ outcome: { outcome: 'cancelled' } }),
-  command = 'codex-acp', args = [], timeoutMs = 120_000 }: AgentOptions & { cwd: string }): Promise<AgentSession> {
-  const env: Environment = { ...process.env, INITIAL_AGENT_MODE: 'read-only' };
+  codexMode = 'read-only', command = 'codex-acp', args = [], timeoutMs = 120_000 }: AgentOptions & { cwd: string }): Promise<AgentSession> {
+  if (!['read-only', 'agent', 'agent-full-access'].includes(codexMode)) throw new Error('Invalid Codex mode');
+  const env: Environment = { ...process.env, INITIAL_AGENT_MODE: codexMode };
   env.CODEX_PATH = localCodexPath(env);
   if (model) env.CODEX_CONFIG = JSON.stringify({ ...JSON.parse(env.CODEX_CONFIG || '{}'), model });
   const child = spawn(command, args, { cwd, env, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
@@ -52,8 +53,8 @@ export async function connectAgent({ cwd, sessionId, model, reasoningEffort, onT
     sessionId ||= 'sessionId' in session ? String(session.sessionId) : undefined;
     const id = sessionId;
     if (!id) throw new Error('ACP agent did not return a session ID');
-    // Explicitly override user/global defaults, including full-access settings.
-    await deadline(connection.setSessionMode({ sessionId: id, modeId: 'read-only' }));
+    // Apply the bot's mode to both new and restored sessions.
+    await deadline(connection.setSessionMode({ sessionId: id, modeId: codexMode }));
     let configOptions = session.configOptions || [];
     const setModel = async (value: string) => {
       const option = configOptions.find(o => o.category === 'model' || o.id === 'model');

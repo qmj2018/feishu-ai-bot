@@ -128,6 +128,21 @@ test("secureConfig rejects a subdirectory instead of the repository root", () =>
   );
 });
 
+test('directory workspace and explicit Codex mode survive configuration and verification', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bot-directory-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const current = { feishu: { appId: 'cli_test', appSecret: 'secret', allowedUsers: ['ou_test'] } };
+  assert.throws(() => secureConfig(current, { projectPath: dir }), /Git/);
+  const next = secureConfig(current, { projectPath: dir, workspaceMode: 'project-directory', codexMode: 'agent-full-access' });
+  assert.equal(next.project.path, fs.realpathSync(dir));
+  assert.equal(next.agents.codexMode, 'agent-full-access');
+  assert.equal(secureConfig(next, { projectPath: dir }).agents.codexMode, 'agent-full-access');
+  assert.deepEqual(inspectSecurity(next, { workspaceMode: 'project-directory' }, {}), []);
+  assert.ok(inspectSecurity(next, { workspaceMode: 'per-session-worktree' }, {}).length);
+  assert.throws(() => secureConfig(next, { projectPath: dir, codexMode: 'typo' }), /权限模式/);
+  assert.throws(() => secureConfig(next, { projectPath: dir, workspaceMode: 'typo' }), /工作空间模式/);
+});
+
 test("runtimePaths remains inside the configured data root", () => {
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "bot-data-"));
   const paths = runtimePaths(

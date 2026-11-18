@@ -16,7 +16,7 @@
     "audit:licenses": "npm run build && node dist/scripts/audit-dependencies.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.22.2"
   },
   "license": "MIT",
   "dependencies": {

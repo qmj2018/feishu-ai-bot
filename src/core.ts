@@ -146,17 +146,22 @@ export function readRuntimeConfig(bot: BotMetadata, env: Environment = process.e
   return parseJsonOutput(fs.readFileSync(file, "utf8"), "Runtime 配置");
 }
 
-export function secureConfig<T extends RuntimeConfig>(current: T, { projectPath, displayName = DEFAULT_DISPLAY_NAME }: { projectPath?: string; displayName?: string } = {}): Omit<T, keyof RuntimeConfig> & RuntimeConfig {
-  const project = resolveProjectPath(projectPath, { requireGit: true });
+export function secureConfig<T extends RuntimeConfig>(current: T, { projectPath, displayName = DEFAULT_DISPLAY_NAME,
+  workspaceMode = current.project?.workspaceMode || 'per-session-worktree', codexMode = current.agents?.codexMode || 'read-only',
+}: { projectPath?: string; displayName?: string; workspaceMode?: string; codexMode?: string } = {}): Omit<T, keyof RuntimeConfig> & RuntimeConfig {
+  if (workspaceMode !== 'per-session-worktree' && workspaceMode !== 'project-directory') throw new Error('工作空间模式无效');
+  if (codexMode !== 'read-only' && codexMode !== 'agent' && codexMode !== 'agent-full-access') throw new Error('Codex 权限模式无效');
+  const project = resolveProjectPath(projectPath, { requireGit: workspaceMode !== 'project-directory' });
   return {
     ...current,
     feishu: { ...current.feishu, enabled: true, domain: current.feishu?.domain || "feishu" },
     group: { ...current.group, replyPolicy: "mention", defaultMode: "thread" },
     weixin: { ...current.weixin, enabled: false },
-    project: { path: project, name: displayName },
+    project: { path: project, name: displayName, workspaceMode },
     agents: {
       ...current.agents,
       defaultAgent: "codex",
+      codexMode,
       enableAutoStart: true,
       acpInitializeTimeoutMs: current.agents?.acpInitializeTimeoutMs || 120000,
     },
@@ -209,9 +214,11 @@ export function inspectSecurity(config: RuntimeConfig, metadata: Partial<BotMeta
   if (config.shell?.enabled !== false) issues.push("飞书裸 Shell 必须关闭");
   if (config.group?.replyPolicy !== "mention") issues.push("群聊必须只响应 mention");
   if (config.weixin?.enabled === true) issues.push("未使用的微信通道必须关闭");
-  if (metadata?.workspaceMode !== "per-session-worktree") {
-    issues.push("workspaceMode 必须为 per-session-worktree");
+  const workspaceMode = config.project?.workspaceMode || 'per-session-worktree';
+  if (!['per-session-worktree', 'project-directory'].includes(workspaceMode) || metadata?.workspaceMode !== workspaceMode) {
+    issues.push("workspaceMode 与项目配置不一致或无效");
   }
+  if (!['read-only', 'agent', 'agent-full-access'].includes(config.agents?.codexMode || 'read-only')) issues.push('Codex 权限模式无效');
   if (status?.nobind === true) issues.push("Runtime 不能以 --nobind 启动");
   return issues;
 }
@@ -222,15 +229,16 @@ export function preflight(projectPath: string | undefined, {
 }: { env?: Environment; commandRunner?: CommandRunner; exists?: typeof commandExists; resolveProject?: typeof resolveProjectPath } = {}) {
   const checks: PreflightCheck[] = [];
   const add = (name: string, ok: boolean, message: string) => checks.push({ name, ok, message });
-  const nodeMajor = Number(process.versions.node.split(".")[0]);
-  add("node", nodeMajor >= 20, `Node.js ${process.versions.node} (${process.execPath})，要求 >= 20`);
+  const [nodeMajor, nodeMinor, nodePatch] = process.versions.node.split(".").map(Number);
+  const nodeReady = nodeMajor > 22 || (nodeMajor === 22 && (nodeMinor > 22 || (nodeMinor === 22 && nodePatch >= 2)));
+  add("node", nodeReady, `Node.js ${process.versions.node} (${process.execPath})，要求 >= 22.22.2`);
   const codex = localCodexPath(env);
   let codexReady = false;
   for (const name of ["npm", "git", "codex"]) {
     const command = name === "codex" ? codex : name;
     if (!exists(command, env)) {
       const hint = name === "codex" ? `部署或启动时将自动安装本机 Codex: ${codex}`
-        : name === "npm" ? "请安装包含 npm 的 Node.js 20+，并检查 PATH" : "请先安装 Git，并检查 PATH";
+        : name === "npm" ? "请安装包含 npm 的 Node.js 22.22.2+，并检查 PATH" : "请先安装 Git，并检查 PATH";
       add(name, false, `${name} 未安装或不在 PATH 中；${hint}`);
       continue;
     }
@@ -241,7 +249,7 @@ export function preflight(projectPath: string | undefined, {
     if (name === "codex") codexReady = ready;
   }
   const resolved = path.resolve(projectPath || process.cwd());
-  try { add("project", true, `Git 仓库根目录: ${resolveProject(resolved)}`); }
+  try { add("project", true, `工作目录: ${resolveProject(resolved)}`); }
   catch (error) { add("project", false, error.message); }
   if (codexReady) {
     const auth = commandRunner(codex, ["login", "status"], { env, allowFailure: true });

@@ -7,7 +7,7 @@
 ## 安装
 
 支持 Linux，以及 Windows 上的 WSL Linux（推荐 Ubuntu/Debian）。将项目下载或克隆到 WSL 中，
-进入目录后运行一键部署；Node.js 20+、npm、Git 会先检查，已有且可用的直接复用，缺失才安装。
+进入目录后运行一键部署；Node.js 22.22.2+、npm、Git 会先检查，已有且可用的直接复用，缺失或版本不满足要求才安装。
 Linux 支持 systemd 用户服务；WSL 未启用 systemd 或 linger 不可用时自动使用后台进程。
 macOS 可使用已构建 CLI 前台运行，一键依赖安装入口目前面向 Linux / WSL。
 
@@ -153,11 +153,11 @@ node dist/bin/feishu-ai-bot.js run --slug my-bot
 
 ## 会话和权限
 
-每个用户、对话和线程有独立会话与 detached Git worktree。worktree 从项目已提交的
+默认每个用户、对话和线程有独立会话与 detached Git worktree。worktree 从项目已提交的
 HEAD 创建，不包括原目录未提交的修改。会话 ID 和消息去重记录持久化，重启后下一条
 新消息恢复会话；中断任务不会自动重放。
 
-Codex 显式使用 `read-only` 模式，需要越过其沙箱权限边界时，飞书收到权限确认消息：
+Codex 默认使用 `read-only` 模式，需要越过其沙箱权限边界时，飞书收到权限确认消息：
 
 ```text
 /approve <一次性令牌>
@@ -167,14 +167,58 @@ Codex 显式使用 `read-only` 模式，需要越过其沙箱权限边界时，�
 仅原发起人在相同对话中的答复有效，300 秒未答复自动拒绝，不提供永久授权。
 只读检查可能不触发审批。不会把飞书消息直接作为 Shell 命令执行。
 
+也可在停止机器人后，用 `configure` 为该机器人设置工作目录和 Codex 权限：
+
+```bash
+node dist/bin/feishu-ai-bot.js configure --slug my-bot --project /absolute/path/to/project \
+  --workspace-mode project-directory --codex-mode agent-full-access
+```
+
+`project-directory` 直接使用指定目录，支持非 Git 项目，会话共享该目录并修改其中的文件。
+`agent-full-access` 对应 Codex Full Access（`danger-full-access`、`approval_policy=never`），
+新建和恢复的 Codex 会话都会应用该模式。默认值分别为 `per-session-worktree`、`read-only`。
+也可在 `start`、`run` 或 `restart` 时直接用 `--cwd <目录>` 设置并保存工作目录。
+`--cwd` 自动选择 `project-directory`，支持带空格的路径（需加引号）。
+已有 systemd 服务时，`start/restart/stop` 会管理该服务；`run` 始终以前台方式运行。
+修改工作目录或工作空间模式时，会备份旧会话和配置并重建会话绑定，保留消息去重记录及旧 worktree。
+目录和模式未改变时，重启会保留会话及其权限选择。
+
+飞书中可随时查询或切换当前会话的 Codex 权限：
+
+```text
+/permissions
+/permissions read-only
+/permissions agent
+/permissions full-access
+```
+
+`read-only` 为只读，越过沙箱边界时需要审批；`agent` 可修改工作空间，越界或联网时需要审批；
+`full-access` 可访问工作空间外文件和网络，无需逐次审批。仅白名单用户可以操作，
+设置按用户、对话和线程隔离并持久化，重启后继续有效。切换按任务顺序执行，当前任务不会中途改变权限，
+下一条 Codex 任务（包括恢复的会话）应用新权限。Claude 的权限不受影响。
+`/new` 开始新会话并恢复机器人默认权限。
+
+- `/help`（或 `help`）：展示全部飞书聊天指令、参数、用途和使用限制；任务执行中也会立即响应。
 - `/cancel`：取消当前会话任务；已排队的后续消息仍会执行。
 - `/new`：在当前排队任务结束后开始新会话。
+- `/sessions`：查看当前用户在本对话、线程中的会话及执行状态。
+- `/session <会话编号>`：切换后续消息使用的会话，不中断其他会话的任务。
 - `/usage`：查询 Codex 账号共享额度（包括服务端提供的周额度、重置时间）和当前会话上下文占比。
   可在任务执行中查询，无需排队，也不会发起模型推理或创建新会话。上下文按最近一次模型调用的
   token 数与窗口容量计算，显示快照时间，不使用会话累计 token 消耗。无可用数据时明确显示暂不可用，
   不显示虚构的 0%；当前仅支持 Codex。群聊仍需 @ 机器人。
-- 每会话最多 3 条运行中/排队消息，全局最多 4 个活跃队列。
-- 单次任务最长 30 分钟，模型最终回复使用飞书富文本 `post` 的 `md` 标签渲染 Markdown，支持标题、
+- 当前会话有任务运行或排队时，再发普通任务消息会收到选择卡片，新消息暂不执行：
+  可以选择“排队等待”“新会话并行处理”或“取消这条消息”。卡片仅原发起人在原聊天中可操作，
+  10 分钟有效；无法发送卡片时提供 `/task <令牌> queue|parallel|discard` 文本选择。
+  重启后未选择的卡片失效，需要重新发送任务，不会自动执行。
+- 选择并行会新建独立上下文，继承原会话的模型和权限设置，原任务继续执行；后续消息切到新会话。
+  用 `/sessions` 和 `/session` 可以返回原会话。worktree 模式为新会话创建独立 worktree；
+  `project-directory` 模式下多个会话共享项目文件，应避免同时修改同一文件。
+- 每会话最多 3 条运行中/排队消息，全局最多 4 个活跃队列；每个对话、线程最多保留 3 条待选择消息。
+- 单次任务执行上限为 2 小时（不含排队和会话初始化），执行期间每 5 分钟回复一次“任务仍在执行”；
+  完成、失败、取消或超时后停止提醒，提醒发送失败不会终止任务。达到上限会明确提示超时，
+  保留会话 ID 和已有文件修改；在同一对话、同一线程发送“继续”可恢复该会话，无需 `/new`。
+- 模型最终回复使用飞书富文本 `post` 的 `md` 标签渲染 Markdown，支持标题、
   列表、加粗、链接、代码块及表格。长回复按字节预算和行边界分段，跨段代码块自动闭合并续接。
   管理命令和权限确认仍使用纯文本。暂不支持图片、附件、流式卡片回复。
 - worktree 保留用于检查修改，暂不自动删除；Git worktree 不是容器，也不隔离用户凭证。
@@ -212,10 +256,10 @@ Linux 上也可以把拉取和部署合成一条命令：
 同名工作空间重试会核对来源及指定分支，复用现有目录，保留本地修改；
 不会自动 pull、切分支、reset 或覆盖未知目录。拉取失败只清理本次临时目录。
 空远端仓库尚无 HEAD 时，请先提交代码，或用 `--empty` 创建本地工作空间。
-不同项目应使用不同 `--slug`；已有会话绑定自己的 worktree，修改项目配置后需 `/new`
-开启对应项目的新会话。工作空间不是容器，运行用户的账号和系统资源仍会共享。
+不同机器人项目可使用不同 `--slug`；修改项目目录或工作空间模式会备份旧会话并重建绑定。
+工作空间不是容器，运行用户的账号和系统资源仍会共享。
 
-当前不提供飞书卡片中的工作空间创建或切换；机器人仍会在所选仓库下按会话隔离 worktree。
+当前不提供飞书卡片中的工作空间创建或切换；默认在所选仓库下按会话隔离 worktree。
 
 ## 在飞书切换模型
 
@@ -273,6 +317,13 @@ Linux 一键部署保留模型发现、连通性探测及可选的 systemd 用�
 
 ```bash
 ./deploy.sh --slug my-bot --project /absolute/path/to/git-repo --model auto
+# 直接使用现有目录（无需 Git），并设置机器人默认 Codex 权限：
+./deploy.sh --slug my-bot --cwd /absolute/path/to/project --codex-mode agent-full-access
+# 已配置的机器人启动或重启时指定工作目录：
+./bin/feishu-ai-bot start --slug my-bot --cwd /absolute/path/to/project
+./bin/feishu-ai-bot restart --slug my-bot --cwd /absolute/path/to/project
+# 前台运行（先停止已有后台实例）：
+./bin/feishu-ai-bot run --slug my-bot --cwd /absolute/path/to/project
 # 不使用 systemd，仅使用后台 daemon：
 ./deploy.sh --slug my-bot --project /absolute/path/to/git-repo --service manual
 node dist/bin/feishu-ai-bot.js status --slug my-bot

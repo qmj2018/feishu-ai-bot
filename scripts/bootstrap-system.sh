@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sourced by deploy.sh so newly installed user-local tools remain on PATH.
 ai_bot_node_ok() {
-  command -v node >/dev/null 2>&1 && node -e 'process.exit(process.platform === "linux" && Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)' >/dev/null 2>&1
+  command -v node >/dev/null 2>&1 && node -e 'const [major, minor, patch] = process.versions.node.split(".").map(Number); process.exit(process.platform === "linux" && (major > 22 || (major === 22 && (minor > 22 || (minor === 22 && patch >= 2)))) ? 0 : 1)' >/dev/null 2>&1
 }
 ai_bot_npm_ok() {
   local candidate
@@ -33,17 +33,17 @@ ai_bot_install_node() (
   mkdir -p "$directory"
   temporary="$(mktemp -d "$directory/.download.XXXXXXXX")"
   trap 'rm -rf -- "$temporary"' EXIT
-  ai_bot_download https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt "$temporary/SHASUMS256.txt"
+  ai_bot_download https://nodejs.org/dist/v22.22.2/SHASUMS256.txt "$temporary/SHASUMS256.txt"
   checksum='' filename=''
   while read -r checksum_candidate filename_candidate; do
-    case "$filename_candidate" in node-v22.*-linux-"$architecture".tar.xz) checksum="$checksum_candidate"; filename="$filename_candidate"; break ;; esac
+    case "$filename_candidate" in node-v22.22.2-linux-"$architecture".tar.xz) checksum="$checksum_candidate"; filename="$filename_candidate"; break ;; esac
   done < "$temporary/SHASUMS256.txt"
-  [[ "$checksum" =~ ^[a-f0-9]{64}$ && "$filename" =~ ^node-v22\.[0-9]+\.[0-9]+-linux-(x64|arm64)\.tar\.xz$ ]] || { echo 'Node.js 官方校验清单无效。' >&2; return 1; }
-  ai_bot_download "https://nodejs.org/dist/latest-v22.x/$filename" "$temporary/$filename"
+  [[ "$checksum" =~ ^[a-f0-9]{64}$ && "$filename" =~ ^node-v22\.22\.2-linux-(x64|arm64)\.tar\.xz$ ]] || { echo 'Node.js 官方校验清单无效。' >&2; return 1; }
+  ai_bot_download "https://nodejs.org/dist/v22.22.2/$filename" "$temporary/$filename"
   (cd "$temporary" && printf '%s  %s\n' "$checksum" "$filename" | sha256sum --check --status)
   tar -xJf "$temporary/$filename" -C "$temporary"
   release="${filename%.tar.xz}"
-  "$temporary/$release/bin/node" -e 'if(process.platform!=="linux" || Number(process.versions.node.split(".")[0])<20)process.exit(1)'
+  "$temporary/$release/bin/node" -e 'if(process.platform!=="linux" || process.versions.node!=="22.22.2")process.exit(1)'
   if [[ ! -d "$directory/$release" ]]; then mv -- "$temporary/$release" "$directory/$release"; fi
   ln -s "$directory/$release" "$temporary/current"
   mv -Tf -- "$temporary/current" "$directory/current"

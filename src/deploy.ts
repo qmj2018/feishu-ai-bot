@@ -18,6 +18,7 @@ export interface DeployOptions {
   slug?: string; name?: string; service?: boolean | 'auto' | 'systemd' | 'manual';
   model?: string; proxyMode?: string; timeoutMs?: number; skipInstall?: boolean; env?: Environment;
   feishuMode?: FeishuMode; feishuProfile?: string; updateCodex?: boolean;
+  workspaceMode?: string; codexMode?: string;
 }
 interface DeployDependencies {
   platform?: string; commandRunner?: CommandRunner; check?: typeof preflight;
@@ -53,6 +54,7 @@ export async function prepareRuntime({ slug = DEFAULT_SLUG, model, proxyMode, ti
 export async function deploy({ projectPath, repo, workspaceName, workspaceRoot, branch, slug = DEFAULT_SLUG, name = DEFAULT_DISPLAY_NAME,
   service = true, model, proxyMode, timeoutMs = 30_000, skipInstall = false,
   feishuMode, feishuProfile, updateCodex = false,
+  workspaceMode, codexMode,
   env: inputEnv = process.env }: DeployOptions = {}, dependencies: DeployDependencies = {}) {
   const {
     platform = process.platform, commandRunner = run, check = preflight, createWorkspace = prepareWorkspace,
@@ -69,6 +71,8 @@ export async function deploy({ projectPath, repo, workspaceName, workspaceRoot, 
   if ((branch || workspaceRoot) && !repo && !workspaceName) throw new Error("--branch/--workspace-root 需要 --repo 或 --workspace");
   validateSlug(slug);
   validateDisplayName(name);
+  if (workspaceMode && !['per-session-worktree', 'project-directory'].includes(workspaceMode)) throw new Error('工作空间模式无效');
+  if (codexMode && !['read-only', 'agent', 'agent-full-access'].includes(codexMode)) throw new Error('Codex 权限模式无效');
   if (![true, false, "auto", "systemd", "manual"].includes(service)) throw new Error("服务模式无效");
   if (!Number.isFinite(timeoutMs) || timeoutMs < 1000 || timeoutMs > 600_000) throw new Error("超时必须为 1-600 秒");
   let env: Environment = normalizeHomeEnv(inputEnv);
@@ -82,11 +86,12 @@ export async function deploy({ projectPath, repo, workspaceName, workspaceRoot, 
     projectPath = workspace.project;
     log(`工作空间${workspace.created ? '已创建' : '已复用'}: ${workspace.root}`);
   }
-  const checks = check(projectPath, { env });
+  const resolveWorkspace = (value?: string) => resolveProject(value, { requireGit: workspaceMode !== 'project-directory' });
+  const checks = check(projectPath, { env, resolveProject: resolveWorkspace });
   for (const item of checks) log(`${item.ok ? "OK" : "FAIL"}  ${item.name}: ${item.message}`);
   const failures = checks.filter(item => !item.ok && !["codex-auth", "codex"].includes(item.name));
   if (failures.length) throw new Error(`请先补齐部署环境: ${failures.map(item => item.name).join(", ")}`);
-  const project = resolveProject(projectPath);
+  const project = resolveWorkspace(projectPath);
   let stage = "项目自检";
   const execute = (command: string, args: string[], options: RunOptions = {}) => commandRunner(command, args, { inherit: true, env, ...options });
   const invoke = (...args: string[]) => execute(process.execPath, [cli, ...args]);
@@ -134,7 +139,8 @@ export async function deploy({ projectPath, repo, workspaceName, workspaceRoot, 
       if (!["stopped", "stale", "unverified"].includes(current.status)) invoke("stop", "--slug", slug);
     }
     stage = "飞书配置和安全基线";
-    invoke("setup", "--slug", slug, "--name", name, "--project", project);
+    invoke("setup", "--slug", slug, "--name", name, "--project", project,
+      ...(workspaceMode ? ['--workspace-mode', workspaceMode] : []), ...(codexMode ? ['--codex-mode', codexMode] : []));
     stage = "启动机器人";
     if (autostart) installService({ slug, enableNow: true, env, runtimeEnvironment: prepared.values });
     else {

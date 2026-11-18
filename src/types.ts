@@ -2,6 +2,7 @@ import type { SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
 
 export type Environment = NodeJS.ProcessEnv;
 export type Provider = 'codex' | 'claude';
+export type CodexMode = 'read-only' | 'agent' | 'agent-full-access';
 export type ServiceEnvironment = Record<string, string>;
 export interface CommandResult {
   status: number | null;
@@ -28,10 +29,10 @@ export interface BotMetadata {
 }
 export interface RuntimeConfig {
   feishu?: { appId?: string; appSecret?: string; domain?: string; allowedUsers?: string[]; enabled?: boolean };
-  project?: { path?: string; name?: string };
+  project?: { path?: string; name?: string; workspaceMode?: 'per-session-worktree' | 'project-directory' };
   group?: { replyPolicy?: string; defaultMode?: string; listenChats?: string[] };
   weixin?: { enabled?: boolean };
-  agents?: { defaultAgent?: string; enableAutoStart?: boolean; acpInitializeTimeoutMs?: number };
+  agents?: { defaultAgent?: string; enableAutoStart?: boolean; acpInitializeTimeoutMs?: number; codexMode?: CodexMode };
   sessions?: { maxQueueSize?: number; autoCleanup?: boolean; cleanupIntervalMinutes?: number };
   permissions?: { strategy?: string; allowedTools?: string[]; deniedTools?: string[]; timeoutSeconds?: number };
   deduplication?: { enabled?: boolean; maxRecords?: number; expireHours?: number };
@@ -66,6 +67,7 @@ export interface PermissionOption { kind: string; optionId: string; name?: strin
 export interface PermissionRequest { options: PermissionOption[]; toolCall: { title?: string | null } }
 export type PermissionResult = { outcome: { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' } };
 export interface AgentOptions {
+  codexMode?: CodexMode;
   cwd?: string;
   provider?: Provider;
   sessionId?: string;
@@ -97,6 +99,8 @@ export interface ChatMessage {
 }
 export interface Session {
   cwd: string;
+  scopeKey?: string;
+  codexMode?: CodexMode;
   provider?: Provider;
   sessionId?: string;
   models?: Partial<Record<Provider, string>>;
@@ -104,7 +108,7 @@ export interface Session {
   engineSessions?: Partial<Record<Provider, string>>;
 }
 export type ActiveSession = Session & Required<Pick<Session, 'provider' | 'models' | 'reasoningEfforts' | 'engineSessions'>>;
-export interface BridgeState { sessions: Record<string, Session>; seen: Record<string, number> }
+export interface BridgeState { sessions: Record<string, Session>; seen: Record<string, number>; routes?: Record<string, string> }
 export interface FeishuMessageEvent {
   sender?: { sender_type?: string; sender_id?: { open_id?: string } };
   message?: { message_id?: string; chat_id?: string; chat_type?: string; message_type?: string; content?: string;

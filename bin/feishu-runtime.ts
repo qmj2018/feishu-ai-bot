@@ -54,8 +54,25 @@ async function main() {
     const request = JSON.parse(input);
     updateJson(paths.config, current => {
       if (JSON.stringify(current) !== JSON.stringify(request.expectedConfig)) throw new Error('配置已被修改，请重试');
+      const previous = current as RuntimeConfig;
+      const changedWorkspace = previous.project?.path !== request.config.project?.path
+        || (previous.project?.workspaceMode || 'per-session-worktree') !== (request.config.project?.workspaceMode || 'per-session-worktree');
+      const sessionsFile = path.join(paths.root, 'sessions.json');
+      if (changedWorkspace && fs.existsSync(sessionsFile)) {
+        const state = read<import('../src/types.js').BridgeState>(sessionsFile);
+        const backup = path.join(paths.root, 'backups', `workspace-${Date.now()}-${crypto.randomUUID()}`);
+        fs.mkdirSync(backup, { recursive: true, mode: 0o700 });
+        saveJson(path.join(backup, 'sessions.json'), state);
+        saveJson(path.join(backup, 'feishu-runtime.json'), previous);
+        saveJson(path.join(backup, 'runtime.json'), read<BotMetadata>(paths.metadata));
+        saveJson(sessionsFile, { ...state, sessions: {}, ...(state.routes ? { routes: {} } : {}) });
+      }
       return request.config;
-    }); return;
+    });
+    updateJson<BotMetadata>(paths.metadata, current => ({ ...current,
+      workspaceMode: request.config.project?.workspaceMode || 'per-session-worktree',
+    }));
+    return;
   }
   validateSlug(slug);
   let bot = bots().find(b => b.slug === slug);
